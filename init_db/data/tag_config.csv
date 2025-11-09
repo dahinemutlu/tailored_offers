@@ -1,0 +1,11 @@
+id,system_name,display_name,tag_type,color,description,is_active,created_at,updated_at
+1,pewist_no_recharge,Pewist No Recharge,A,#ffe6aa,Applied automatically when customer received Pewist (loan) service and did not recharge.,TRUE,9/1/2025,
+2,recharge_delay_0d,Recharge Delay 0d,A,#ffe6e6,Applied automatically when a customer typically recharges on the same day their service ends.,TRUE,9/1/2025,
+3,recharge_delay_1to7d,Recharge Delay 1to7d,A,#ffc8c8,Applied automatically when a customer typically recharges within the first week after their service ends.,TRUE,9/1/2025,
+4,recharge_delay_7to30d,Recharge Delay 7to30d,A,#ffaaaa,Applied automatically when a customer typically waits between one week and one month to recharge after service ends.,TRUE,9/1/2025,
+5,recharge_delay_30pd,Recharge Delay 30pd,A,#ff8c8c,Applied automatically when a customer typically waits more than 30 days to recharge after service ends.,TRUE,9/1/2025,
+6,recharge_school_holiday_only,Recharge School Holiday Only,A,#aad0ff,Applied automatically when customer only recharged during school holidays (May 25 - Sep 15),TRUE,9/1/2025,
+7,loyal_12x_12m,High-Loyalty Customer,A,#2E7D32,Applied automatically when a customer has at least 12 successful recharges within the last 12 months.,TRUE,9/1/2025,
+8,vip,VIP,M,#171717,Manually applied to very important customers.,TRUE,9/1/2025,
+9,do_not_contact,Do Not Contact,M,#B2BEB5,Manually applied to customers who opted out of communications.,TRUE,9/1/2025,
+10,test_tag,Test Tag,M,#ff0000,Test tag,TRUE,9/1/2025,
