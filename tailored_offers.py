@@ -653,7 +653,7 @@ if st.session_state.active_tab == "Client Tags":
                     )
                     
                     # Display the chart with hidden modebar
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                    st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
             
             # Add two charts side by side below
             chart_col1, chart_col2 = st.columns(2)
@@ -695,7 +695,7 @@ if st.session_state.active_tab == "Client Tags":
                             showlegend=False
                         )
                         
-                        st.plotly_chart(bar_fig, use_container_width=True, config={'displayModeBar': False})
+                        st.plotly_chart(bar_fig, width='stretch', config={'displayModeBar': False})
             
             with chart_col2:
                 # Add section header
@@ -729,7 +729,7 @@ if st.session_state.active_tab == "Client Tags":
                             showlegend=False
                         )
                         
-                        st.plotly_chart(manual_bar_fig, use_container_width=True, config={'displayModeBar': False})
+                        st.plotly_chart(manual_bar_fig, width='stretch', config={'displayModeBar': False})
                     else:
                         st.info("No manual tags found.")
         
@@ -1088,7 +1088,7 @@ if st.session_state.active_tab == "Client Tags":
                     
                     with col4:
                         if changed:
-                            if st.button("Save", key=f"auto_save_{row['id']}", use_container_width=True):
+                            if st.button("Save", key=f"auto_save_{row['id']}", width='stretch'):
                                 success = update_tag_config(
                                     tag_id=row['id'],
                                     display_name=new_display_name,
@@ -1138,9 +1138,9 @@ if st.session_state.active_tab == "Client Tags":
                     
                     form_col_submit, form_col_cancel, form_col_spacer = st.columns([1, 1, 2])
                     with form_col_submit:
-                        submit_btn = st.form_submit_button("Create Tag", use_container_width=True)
+                        submit_btn = st.form_submit_button("Create Tag", width='stretch')
                     with form_col_cancel:
-                        cancel_btn = st.form_submit_button("Cancel", use_container_width=True)
+                        cancel_btn = st.form_submit_button("Cancel", width='stretch')
                     
                     if submit_btn:
                         if new_tag_name:
@@ -1224,7 +1224,7 @@ if st.session_state.active_tab == "Client Tags":
                     
                     with col4:
                         if changed:
-                            if st.button("Save", key=f"manual_save_{row['id']}", use_container_width=True):
+                            if st.button("Save", key=f"manual_save_{row['id']}", width='stretch'):
                                 success = update_tag_config(
                                     tag_id=row['id'],
                                     display_name=new_display_name,
