@@ -463,16 +463,8 @@
   background: transparent; /* remove background color */
   border-bottom: 1px solid #E5E7EB;
   align-items: flex-end; /* ensure tabs align to the bottom of the bar */
-  flex-wrap: nowrap;            /* keep items on a single row */
-  overflow-x: auto;             /* scroll only when needed */
-  overflow-y: hidden;           /* prevent any vertical growth */
-  scrollbar-gutter: stable both-edges; /* reserve space for scrollbars where supported */
-  -webkit-overflow-scrolling: touch; /* smooth scrolling on touch */
+  flex-wrap: wrap;              /* allow tabs to wrap to next line */
 }
-
-/* Hide horizontal scrollbar while preserving scroll behavior */
-.subtabs { scrollbar-width: none; -ms-overflow-style: none; }
-.subtabs::-webkit-scrollbar { display: none; height: 0; }
 
 .subtabs a.subtab,
 .subtab {
@@ -508,6 +500,11 @@
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none; /* ensure not clickable */
+}
+
+/* Tags subtab icon color */
+.subtabs a.tags-subtab .material-icons {
+  color: #E34B25 !important;
 }
 
 /* Prevent global button styling from affecting subtabs — do NOT override subtab text color */
@@ -607,12 +604,6 @@
 .cpe-btn .material-icons { font-size:18px; line-height:1; }
 .cpe-btn-disabled { opacity:.55; cursor:not-allowed; pointer-events:none; }
 .dt-green { color: #059669; font-weight: 600; }
-
-/* First CPE action button (New Ticket) */
-.cpe-actions .cpe-btn:first-child .material-icons { color: #ec4e26 !important; }
-.cpe-actions .cpe-btn:first-child:hover .material-icons,
-.cpe-actions .cpe-btn:first-child:active .material-icons,
-.cpe-actions .cpe-btn:first-child:focus .material-icons { color: #ffffff !important; }
 
 /* Dropdown menu in cpe-actions */
 .cpe-actions .dropdown .dropdown-item:active { background:#E5E7EB; }
