@@ -12,6 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from sqlalchemy import create_engine, select, MetaData, Table
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode, DataReturnMode, ColumnsAutoSizeMode
 
 # Page configuration
@@ -117,7 +118,7 @@ def _get_database_url() -> str:
 @st.cache_resource(show_spinner=False)
 def get_db_engine() -> Engine:
     url = _get_database_url()
-    return create_engine(url, pool_pre_ping=True, pool_recycle=3600, future=True)
+    return create_engine(url, poolclass=NullPool, future=True)
 
 
 def fetch_client_tags_dataframe() -> pd.DataFrame:

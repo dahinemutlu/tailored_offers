@@ -8,4 +8,4 @@ id,system_name,display_name,tag_type,color,description,is_active,created_at,upda
 7,loyal_12x_12m,High-Loyalty Customer,A,#2E7D32,Applied automatically when a customer has at least 12 successful recharges within the last 12 months.,TRUE,9/1/2025,
 8,vip,VIP,M,#171717,Manually applied to very important customers.,TRUE,9/1/2025,
 9,do_not_contact,Do Not Contact,M,#B2BEB5,Manually applied to customers who opted out of communications.,TRUE,9/1/2025,
-10,test_tag,Test Tag,M,#ff0000,Test tag,TRUE,9/1/2025,
+10,test_tag,Test Tag,M,#ff0000,Test tag description.,TRUE,9/1/2025,
