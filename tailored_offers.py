@@ -6,7 +6,6 @@ from typing import Any, Dict, Mapping, Optional
 from pathlib import Path
 from base64 import b64encode
 
-
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -677,8 +676,22 @@ elif st.session_state.active_tab == "Client":
                 # Disable all menu buttons globally
                 gb.configure_grid_options(suppressMenuHide=True)
             
-                # Enable single row selection
-                gb.configure_selection(selection_mode='single', use_checkbox=False)
+                # Disable selection completely - we'll use cell click events
+                gb.configure_selection(selection_mode=None, use_checkbox=False)
+                
+                # Configure cell clicked event to only select on Name column
+                gb.configure_grid_options(
+                    onCellClicked=JsCode("""
+                        function(params) {
+                            if (params.column.colId === 'name') {
+                                params.api.deselectAll();
+                                params.node.setSelected(true);
+                            }
+                        }
+                    """),
+                    suppressRowClickSelection=True,
+                    rowSelection='single'
+                )
             
                 # Configure column headers
                 column_headers = {
@@ -799,20 +812,24 @@ elif st.session_state.active_tab == "Client":
                     ".ag-paging-panel": {"justify-content": "flex-start !important"}
                 }
             
+                # Use a dynamic key that changes when navigating to reset grid state
+                grid_key = 'clients_grid' if st.session_state.get('last_selected_client') is None else f'clients_grid_{st.session_state.last_selected_client}'
+                
                 grid_response = AgGrid(
                     clients_view,
                     gridOptions=grid_options,
                     height=520,
                     fit_columns_on_grid_load=False,  # Don't fit columns
                     columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,  # Auto-adjust column widths
-                    update_mode=GridUpdateMode.MODEL_CHANGED,
+                    update_mode=GridUpdateMode.SELECTION_CHANGED,
                     allow_unsafe_jscode=True,
                     theme="balham",
-                    reload_data=False,
+                    reload_data=True,
                     custom_css=custom_css,
+                    key=grid_key
                 )
             
-                # Check if a row was selected
+                # Check if a row was selected (only happens when Name column is clicked)
                 selected_rows_df = grid_response['selected_rows']
                 if selected_rows_df is not None and not selected_rows_df.empty:
                     selected_id = int(selected_rows_df.iloc[0]['client_id'])
@@ -1084,11 +1101,11 @@ elif st.session_state.active_tab == "Client":
                         suppressHeaderMenuButton=True,
                     )
             
-                    # Configure selection
+                    # Configure selection - disable row click selection
                     gb.configure_selection(
                         selection_mode="multiple",
                         use_checkbox=False,
-                        rowMultiSelectWithClick=True,
+                        rowMultiSelectWithClick=False,
                     )
             
                     # Configure the Select column with checkboxes
@@ -1139,8 +1156,9 @@ elif st.session_state.active_tab == "Client":
                                 if pd.notna(row.get("display_name")) and pd.notna(row.get("color")):
                                     color_map[str(row["display_name"])] = str(row["color"])
                 
-                        # Create color lookup string for JS
-                        color_json = str(color_map).replace("'", '"')
+                        # Create color lookup string for JS using proper JSON encoding
+                        import json
+                        color_json = json.dumps(color_map)
                 
                         color_renderer = JsCode(f"""
                             class ColorBadgeRenderer {{
@@ -1257,25 +1275,33 @@ elif st.session_state.active_tab == "Client":
                         ".ag-paging-panel": {"justify-content": "flex-start !important"}
                     }
             
-                    # Display grid
+                    # Initialize deletion counter for grid key management
+                    if 'dashboard_deletion_count' not in st.session_state:
+                        st.session_state.dashboard_deletion_count = 0
+                    
+                    # Display grid with dynamic key that changes after deletions
+                    grid_key = f'client_tags_dashboard_grid_{st.session_state.dashboard_deletion_count}'
                     grid_response = AgGrid(
                         df_view,
                         gridOptions=grid_options,
                         height=520,
                         fit_columns_on_grid_load=False,
-                        update_mode=GridUpdateMode.MODEL_CHANGED,
+                        update_mode=GridUpdateMode.SELECTION_CHANGED,
                         data_return_mode=DataReturnMode.AS_INPUT,
                         allow_unsafe_jscode=True,
                         theme="balham",
                         custom_css=custom_css,
+                        key=grid_key,
+                        reload_data=False
                     )
             
-                    # Show remove button if rows are selected
+                    # Show remove button only if rows are selected
                     selected_rows = grid_response.get("selected_rows", [])
                     if selected_rows is not None and len(selected_rows) > 0:
+                        selected_count = len(selected_rows)
                         with col2:
                             st.markdown('<div style="padding-top: 26px;"></div>', unsafe_allow_html=True)
-                            if st.button("🗑️ Remove Selected", key="remove_tags_button", type="primary"):
+                            if st.button(f"🗑️ Remove Selected ({selected_count})", key="remove_tags_button", type="primary"):
                                 # Get the original indices to find client_id and tag_id
                                 removed_count = 0
                         
@@ -1300,152 +1326,265 @@ elif st.session_state.active_tab == "Client":
                                                 removed_count += 1
                         
                                 if removed_count > 0:
+                                    # Increment deletion counter to reset grid selection
+                                    st.session_state.dashboard_deletion_count += 1
                                     with message_container:
                                         st.success(f"Removed {removed_count} tag(s)")
                                     time.sleep(2)
                                     st.rerun()
             
             elif st.session_state.active_client_tags_subtab == "Settings":
-                # Add custom CSS for compact tag rows and expander styling
-                st.markdown("""
-                    <style>
-                    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-                        gap: 0.5rem;
-                    }
-                    div[data-testid="stHorizontalBlock"] {
-                        align-items: center;
-                        gap: 0.5rem;
-                    }
-                    /* Style expander headers like subheaders */
-                    [data-testid="stExpander"] summary {
-                        font-size: 1.5rem !important;
-                        font-weight: 600 !important;
-                        color: rgb(49, 51, 63) !important;
-                    }
-                    [data-testid="stExpander"] summary p {
-                        font-size: 1.5rem !important;
-                        font-weight: 600 !important;
-                    }
-                    </style>
-                """, unsafe_allow_html=True)
-        
+                # Show auto tag edit modal
+                if 'edit_auto_tag' in st.session_state and st.session_state.edit_auto_tag is not None:
+                    tag_data = st.session_state.edit_auto_tag
+                    
+                    @st.dialog(f"Editing: {tag_data['display_name']}", width="small")
+                    def edit_auto_tag_modal():
+                        # First thing: check if dialog should close
+                        if st.session_state.get('close_auto_dialog', False):
+                            st.session_state.edit_auto_tag = None
+                            st.session_state.close_auto_dialog = False
+                            st.rerun()
+                        
+                        new_display_name = st.text_input("Tag", value=tag_data['display_name'], key="auto_tag_name")
+                        
+                        # Description (read-only for automatic tags)
+                        st.text_area("Description", value=tag_data['description'] if pd.notna(tag_data['description']) else "", disabled=True, height=80, key="auto_tag_desc")
+                        
+                        new_color = st.color_picker("Color", value=tag_data['color'], key="auto_tag_color")
+                        new_is_active = st.checkbox("Active", value=bool(tag_data['is_active']), key="auto_tag_active")
+                        
+                        # Add spacing
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        # Placeholder for success message (full width)
+                        message_placeholder = st.empty()
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Save", use_container_width=True, type="primary", key="save_auto_tag"):
+                                success = update_tag_config(
+                                    tag_id=int(tag_data['id']),
+                                    display_name=new_display_name,
+                                    color=new_color,
+                                    is_active=new_is_active
+                                )
+                                if success:
+                                    message_placeholder.success(f"Updated {new_display_name}")
+                                    time.sleep(1)
+                                st.session_state.close_auto_dialog = True
+                                st.rerun()
+                        with col2:
+                            if st.button("Cancel", use_container_width=True, key="cancel_auto_tag"):
+                                st.session_state.close_auto_dialog = True
+                                st.rerun()
+                    
+                    edit_auto_tag_modal()
+                
+                # Show manual tag edit modal
+                elif 'edit_manual_tag' in st.session_state and st.session_state.edit_manual_tag is not None:
+                    tag_data = st.session_state.edit_manual_tag
+                    
+                    @st.dialog(f"Editing: {tag_data['display_name']}", width="small")
+                    def edit_manual_tag_modal():
+                        # First thing: check if dialog should close
+                        if st.session_state.get('close_manual_dialog', False):
+                            st.session_state.edit_manual_tag = None
+                            st.session_state.close_manual_dialog = False
+                            st.rerun()
+                        
+                        new_display_name = st.text_input("Tag", value=tag_data['display_name'], key="manual_tag_name")
+                        new_description = st.text_area("Description", value=tag_data['description'] if pd.notna(tag_data['description']) else "", height=80, key="manual_tag_desc")
+                        new_color = st.color_picker("Color", value=tag_data['color'], key="manual_tag_color")
+                        new_is_active = st.checkbox("Active", value=bool(tag_data['is_active']), key="manual_tag_active")
+                        
+                        # Add spacing
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        # Placeholder for success message (full width)
+                        message_placeholder = st.empty()
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Save", use_container_width=True, type="primary", key="save_manual_tag"):
+                                success = update_tag_config(
+                                    tag_id=int(tag_data['id']),
+                                    display_name=new_display_name,
+                                    color=new_color,
+                                    is_active=new_is_active,
+                                    description=new_description
+                                )
+                                if success:
+                                    message_placeholder.success(f"Updated {new_display_name}")
+                                    time.sleep(1)
+                                st.session_state.close_manual_dialog = True
+                                st.rerun()
+                        with col2:
+                            if st.button("Cancel", use_container_width=True, key="cancel_manual_tag"):
+                                st.session_state.close_manual_dialog = True
+                                st.rerun()
+                    
+                    edit_manual_tag_modal()
+                
                 # Automatic Tags Section
-                with st.expander("Automatic Tags", expanded=True):
-                    # Placeholder for success/info messages
-                    message_container = st.container()
-            
-                    auto_tags_df = fetch_tag_config(tag_type='A')
-            
-                    if not auto_tags_df.empty:
-                        for idx, row in auto_tags_df.iterrows():
-                            col1, col2, col3, col4 = st.columns([4, 0.7, 0.7, 0.7], gap="small")
-                    
-                            with col1:
-                                new_display_name = st.text_input(
-                                    "Display Name",
-                                    value=row['display_name'],
-                                    key=f"auto_name_{row['id']}",
-                                    label_visibility="collapsed"
-                                )
-                    
-                            with col2:
-                                new_color = st.color_picker(
-                                    "Color",
-                                    value=row['color'] if pd.notna(row['color']) else "#6b7280",
-                                    key=f"auto_color_{row['id']}",
-                                    label_visibility="collapsed"
-                                )
-                    
-                            with col3:
-                                new_is_active = st.checkbox(
-                                    "Active",
-                                    value=bool(row['is_active']) if pd.notna(row['is_active']) else True,
-                                    key=f"auto_active_{row['id']}"
-                                )
-                    
-                            # Description field (read-only, same width as display name)
-                            desc_col1, desc_col2 = st.columns([4, 2.1])
-                            with desc_col1:
-                                st.text_area(
-                                    "Description",
-                                    value=row['description'] if pd.notna(row['description']) else "",
-                                    key=f"auto_desc_{row['id']}",
-                                    label_visibility="collapsed",
-                                    height=60,
-                                    disabled=True,
-                                    placeholder="No description"
-                                )
-                    
-                            # Check if anything changed
-                            changed = False
-                            if new_display_name != row['display_name']:
-                                changed = True
-                            if new_color != row['color']:
-                                changed = True
-                            if new_is_active != bool(row['is_active']):
-                                changed = True
-                    
-                            with col4:
-                                if changed:
-                                    if st.button("Save", key=f"auto_save_{row['id']}", width='stretch'):
-                                        success = update_tag_config(
-                                            tag_id=row['id'],
-                                            display_name=new_display_name,
-                                            color=new_color,
-                                            is_active=new_is_active
-                                        )
-                                        if success:
-                                            with message_container:
-                                                st.success(f"Updated {new_display_name}")
-                                            time.sleep(2)  # Show message for 2 seconds
-                                            st.rerun()
-                                else:
-                                    st.write("")  # Empty placeholder to maintain layout
-                    
-                            st.markdown("<hr style='margin: 0.5rem 0; border: 0; border-top: 1px solid rgba(0,0,0,0.1);' />", unsafe_allow_html=True)
-                    else:
-                        st.info("No automatic tags found.")
+                st.subheader("Automatic Tags")
+                auto_tags_df = fetch_tag_config(tag_type='A')
         
-                # Manual Tags Section
-                with st.expander("Manual Tags", expanded=True):
-                    # Placeholder for success/info messages
-                    manual_message_container = st.container()
-            
-                    # Add new tag button and form
-                    if st.button("➕ Add New Manual Tag", key="add_manual_tag_btn"):
-                        st.session_state.show_add_manual_tag_form = True
-            
-                    # Show add tag form if button was clicked
-                    if st.session_state.get("show_add_manual_tag_form", False):
-                        with st.form("add_manual_tag_form"):
-                            st.write("**Create New Manual Tag**")
+                if not auto_tags_df.empty:
+                    # Prepare grid data - add action column as FIRST column, keep color but hide it
+                    auto_grid_df = auto_tags_df[['id', 'display_name', 'color', 'is_active', 'description']].copy()
+                    auto_grid_df.insert(0, 'edit', '✏️')  # Edit emoji as first column
                     
-                            form_col1, form_col2, form_col3 = st.columns([3, 0.7, 0.7])
-                            with form_col1:
-                                new_tag_name = st.text_input("Tag Name", placeholder="Enter tag name...")
+                    # Build AG Grid
+                    gb = GridOptionsBuilder.from_dataframe(auto_grid_df)
                     
-                            with form_col2:
-                                new_tag_color = st.color_picker("Color", value="#6b7280")
+                    gb.configure_default_column(
+                        editable=False,
+                        resizable=True,
+                        filter=False,
+                        sortable=False,
+                        suppressMenu=True,
+                    )
                     
-                            with form_col3:
-                                new_tag_active = st.checkbox("Active", value=True)
+                    # Configure edit button column (first column)
+                    gb.configure_column(
+                        "edit",
+                        headerName="",
+                        width=60,
+                        cellStyle={'textAlign': 'center', 'cursor': 'pointer', 'fontSize': '18px'},
+                        editable=False,
+                        pinned='left',
+                        suppressSizeToFit=True
+                    )
                     
-                            # Description below (same width as tag name)
-                            desc_form_col1, desc_form_col2 = st.columns([3, 1.4])
-                            with desc_form_col1:
-                                new_tag_description = st.text_area("Description", placeholder="Enter tag description...", height=60)
+                    # Configure Tag column with color background using cellStyle function
+                    gb.configure_column(
+                        "display_name", 
+                        headerName="Tag", 
+                        autoHeaderHeight=True, 
+                        wrapHeaderText=True,
+                        cellStyle=JsCode("""
+                            function(params) {
+                                const color = params.data.color;
+                                // Calculate contrasting text color
+                                const hex = color.replace('#', '');
+                                const r = parseInt(hex.substr(0, 2), 16);
+                                const g = parseInt(hex.substr(2, 2), 16);
+                                const b = parseInt(hex.substr(4, 2), 16);
+                                const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                                const textColor = luminance > 0.5 ? '#000000' : '#ffffff';
+                                
+                                return {
+                                    'backgroundColor': color,
+                                    'color': textColor,
+                                    'fontWeight': '500',
+                                    'padding': '8px 12px',
+                                    'display': 'flex',
+                                    'alignItems': 'center',
+                                    'height': '100%'
+                                };
+                            }
+                        """)
+                    )
                     
-                            form_col_submit, form_col_cancel, form_col_spacer = st.columns([1, 1, 2])
-                            with form_col_submit:
-                                submit_btn = st.form_submit_button("Create Tag", width='stretch')
-                            with form_col_cancel:
-                                cancel_btn = st.form_submit_button("Cancel", width='stretch')
+                    # Hide color column (but keep it in data for styling)
+                    gb.configure_column("color", hide=True)
                     
-                            if submit_btn:
+                    # Configure other data columns
+                    gb.configure_column("is_active", headerName="Active", autoHeaderHeight=True, wrapHeaderText=True)
+                    gb.configure_column("description", headerName="Description", flex=1, autoHeaderHeight=True, wrapHeaderText=True)
+                    
+                    # Hide ID column but keep it in data
+                    gb.configure_column("id", hide=True)
+                    
+                    # Disable selection completely
+                    gb.configure_selection(selection_mode=None, use_checkbox=False)
+                    
+                    # Configure cell clicked event to only select on edit column
+                    gb.configure_grid_options(
+                        onCellClicked=JsCode("""
+                            function(params) {
+                                if (params.column.colId === 'edit') {
+                                    params.api.deselectAll();
+                                    params.node.setSelected(true);
+                                }
+                            }
+                        """),
+                        suppressRowClickSelection=True,
+                        rowSelection='single'
+                    )
+                    
+                    grid_options = gb.build()
+                    
+                    # Calculate dynamic height based on row count
+                    row_height = 42
+                    header_height = 48
+                    min_height = 150
+                    dynamic_height = header_height + (len(auto_grid_df) * row_height) + 10
+                    auto_grid_height = max(min_height, min(dynamic_height, 600))
+                    
+                    # Use a dynamic key that changes when modal closes to reset grid state
+                    grid_key = 'auto_tags_grid' if st.session_state.get('edit_auto_tag') is not None else 'auto_tags_grid_reset'
+                    
+                    grid_response = AgGrid(
+                        auto_grid_df,
+                        gridOptions=grid_options,
+                        height=auto_grid_height,
+                        update_mode=GridUpdateMode.SELECTION_CHANGED,
+                        allow_unsafe_jscode=True,
+                        theme="balham",
+                        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+                        key=grid_key,
+                        reload_data=True
+                    )
+                    
+                    # Check if a row was selected (only happens when edit column is clicked)
+                    if 'edit_auto_tag' not in st.session_state or st.session_state.edit_auto_tag is None:
+                        selected_rows = grid_response.get('selected_rows')
+                        if selected_rows is not None and not selected_rows.empty:
+                            selected_row = selected_rows.iloc[0].to_dict()
+                            st.session_state.edit_auto_tag = selected_row
+                            st.rerun()
+                
+                # Show message if no tags
+                if auto_tags_df.empty:
+                    st.info("No automatic tags found.")
+        
+                # Manual Tags Section  
+                st.subheader("Manual Tags")
+                
+                # Add new tag button
+                if st.button("➕ Create New Tag", key="add_manual_tag_btn"):
+                    st.session_state.show_add_manual_tag_dialog = True
+        
+                # Show add tag modal
+                if st.session_state.get("show_add_manual_tag_dialog", False):
+                    @st.dialog("Create New Tag", width="small")
+                    def add_manual_tag_modal():
+                        # Check if dialog should close
+                        if st.session_state.get('close_add_dialog', False):
+                            st.session_state.show_add_manual_tag_dialog = False
+                            st.session_state.close_add_dialog = False
+                            st.rerun()
+                        
+                        new_tag_name = st.text_input("Tag Name", placeholder="Enter tag name...", key="new_tag_name")
+                        new_tag_description = st.text_area("Description", placeholder="Enter tag description...", height=80, key="new_tag_desc")
+                        new_tag_color = st.color_picker("Color", value="#6b7280", key="new_tag_color")
+                        new_tag_active = st.checkbox("Active", value=True, key="new_tag_active")
+                        
+                        # Add spacing
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        # Placeholder for success message
+                        message_placeholder = st.empty()
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Create", use_container_width=True, type="primary", key="create_new_tag"):
                                 if new_tag_name:
                                     # Convert tag name to system_name (lowercase with underscores)
                                     new_tag_system_name = new_tag_name.lower().replace(" ", "_")
-                            
+                                    
                                     # Insert new tag into database
                                     success = create_manual_tag(
                                         system_name=new_tag_system_name,
@@ -1455,93 +1594,140 @@ elif st.session_state.active_tab == "Client":
                                         is_active=new_tag_active
                                     )
                                     if success:
-                                        st.session_state.show_add_manual_tag_form = False
-                                        with manual_message_container:
-                                            st.success(f"Created new tag: {new_tag_name}")
-                                        time.sleep(2)
-                                        st.rerun()
+                                        message_placeholder.success(f"Created new tag: {new_tag_name}")
+                                        time.sleep(1)
+                                    st.session_state.close_add_dialog = True
+                                    st.rerun()
                                 else:
-                                    st.error("Tag Name is required!")
-                    
-                            if cancel_btn:
-                                st.session_state.show_add_manual_tag_form = False
+                                    message_placeholder.error("Tag Name is required!")
+                        with col2:
+                            if st.button("Cancel", use_container_width=True, key="cancel_new_tag"):
+                                st.session_state.close_add_dialog = True
                                 st.rerun()
+                    
+                    add_manual_tag_modal()
+        
+                manual_tags_df = fetch_tag_config(tag_type='M')
+        
+                if not manual_tags_df.empty:
+                    # Prepare grid data - add action column as FIRST column, keep color but hide it
+                    manual_grid_df = manual_tags_df[['id', 'display_name', 'color', 'is_active', 'description']].copy()
+                    manual_grid_df.insert(0, 'edit', '✏️')  # Edit emoji as first column
+                    
+                    # Build AG Grid
+                    gb = GridOptionsBuilder.from_dataframe(manual_grid_df)
+                    
+                    gb.configure_default_column(
+                        editable=False,
+                        resizable=True,
+                        filter=False,
+                        sortable=False,
+                        suppressMenu=True,
+                    )
+                    
+                    # Configure edit button column (first column)
+                    gb.configure_column(
+                        "edit",
+                        headerName="",
+                        width=60,
+                        cellStyle={'textAlign': 'center', 'cursor': 'pointer', 'fontSize': '18px'},
+                        editable=False,
+                        pinned='left',
+                        suppressSizeToFit=True
+                    )
+                    
+                    # Configure Tag column with color background using cellStyle function
+                    gb.configure_column(
+                        "display_name", 
+                        headerName="Tag", 
+                        autoHeaderHeight=True, 
+                        wrapHeaderText=True,
+                        cellStyle=JsCode("""
+                            function(params) {
+                                const color = params.data.color;
+                                // Calculate contrasting text color
+                                const hex = color.replace('#', '');
+                                const r = parseInt(hex.substr(0, 2), 16);
+                                const g = parseInt(hex.substr(2, 2), 16);
+                                const b = parseInt(hex.substr(4, 2), 16);
+                                const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                                const textColor = luminance > 0.5 ? '#000000' : '#ffffff';
+                                
+                                return {
+                                    'backgroundColor': color,
+                                    'color': textColor,
+                                    'fontWeight': '500',
+                                    'padding': '8px 12px',
+                                    'display': 'flex',
+                                    'alignItems': 'center',
+                                    'height': '100%'
+                                };
+                            }
+                        """)
+                    )
+                    
+                    # Hide color column (but keep it in data for styling)
+                    gb.configure_column("color", hide=True)
+                    
+                    # Configure other data columns
+                    gb.configure_column("is_active", headerName="Active", autoHeaderHeight=True, wrapHeaderText=True)
+                    gb.configure_column("description", headerName="Description", flex=1, autoHeaderHeight=True, wrapHeaderText=True)
+                    
+                    # Hide ID column but keep it in data
+                    gb.configure_column("id", hide=True)
+                    
+                    # Disable selection completely
+                    gb.configure_selection(selection_mode=None, use_checkbox=False)
+                    
+                    # Configure cell clicked event to only select on edit column
+                    gb.configure_grid_options(
+                        onCellClicked=JsCode("""
+                            function(params) {
+                                if (params.column.colId === 'edit') {
+                                    params.api.deselectAll();
+                                    params.node.setSelected(true);
+                                }
+                            }
+                        """),
+                        suppressRowClickSelection=True,
+                        rowSelection='single'
+                    )
+                    
+                    grid_options = gb.build()
+                    
+                    # Calculate dynamic height based on row count
+                    row_height = 42
+                    header_height = 48
+                    min_height = 150
+                    dynamic_height = header_height + (len(manual_grid_df) * row_height) + 10
+                    manual_grid_height = max(min_height, min(dynamic_height, 600))
+                    
+                    # Use a dynamic key that changes when modal closes to reset grid state
+                    grid_key = 'manual_tags_grid' if st.session_state.get('edit_manual_tag') is not None else 'manual_tags_grid_reset'
+                    
+                    grid_response = AgGrid(
+                        manual_grid_df,
+                        gridOptions=grid_options,
+                        height=manual_grid_height,
+                        update_mode=GridUpdateMode.SELECTION_CHANGED,
+                        allow_unsafe_jscode=True,
+                        theme="balham",
+                        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+                        key=grid_key,
+                        reload_data=True
+                    )
+                    
+                    # Check if a row was selected (only happens when edit column is clicked)
+                    if 'edit_manual_tag' not in st.session_state or st.session_state.edit_manual_tag is None:
+                        selected_rows = grid_response.get('selected_rows')
+                        if selected_rows is not None and not selected_rows.empty:
+                            selected_row = selected_rows.iloc[0].to_dict()
+                            st.session_state.edit_manual_tag = selected_row
+                            st.rerun()
                 
-                        st.markdown("<hr style='margin: 1rem 0; border: 0; border-top: 2px solid rgba(0,0,0,0.2);' />", unsafe_allow_html=True)
-            
-                    manual_tags_df = fetch_tag_config(tag_type='M')
-            
-                    if not manual_tags_df.empty:
-                        for idx, row in manual_tags_df.iterrows():
-                            col1, col2, col3, col4 = st.columns([4, 0.7, 0.7, 0.7], gap="small")
-                    
-                            with col1:
-                                new_display_name = st.text_input(
-                                    "Display Name",
-                                    value=row['display_name'],
-                                    key=f"manual_name_{row['id']}",
-                                    label_visibility="collapsed"
-                                )
-                    
-                            with col2:
-                                new_color = st.color_picker(
-                                    "Color",
-                                    value=row['color'] if pd.notna(row['color']) else "#6b7280",
-                                    key=f"manual_color_{row['id']}",
-                                    label_visibility="collapsed"
-                                )
-                    
-                            with col3:
-                                new_is_active = st.checkbox(
-                                    "Active",
-                                    value=bool(row['is_active']) if pd.notna(row['is_active']) else True,
-                                    key=f"manual_active_{row['id']}"
-                                )
-                    
-                            # Description field (editable, same width as display name)
-                            desc_col1, desc_col2 = st.columns([4, 2.1])
-                            with desc_col1:
-                                new_description = st.text_area(
-                                    "Description",
-                                    value=row['description'] if pd.notna(row['description']) else "",
-                                    key=f"manual_desc_{row['id']}",
-                                    label_visibility="collapsed",
-                                    height=60,
-                                    placeholder="Enter tag description..."
-                                )
-                    
-                            # Check if anything changed
-                            changed = False
-                            if new_display_name != row['display_name']:
-                                changed = True
-                            if new_color != row['color']:
-                                changed = True
-                            if new_is_active != bool(row['is_active']):
-                                changed = True
-                            if new_description != (row['description'] if pd.notna(row['description']) else ""):
-                                changed = True
-                    
-                            with col4:
-                                if changed:
-                                    if st.button("Save", key=f"manual_save_{row['id']}", width='stretch'):
-                                        success = update_tag_config(
-                                            tag_id=row['id'],
-                                            display_name=new_display_name,
-                                            color=new_color,
-                                            is_active=new_is_active,
-                                            description=new_description
-                                        )
-                                        if success:
-                                            with manual_message_container:
-                                                st.success(f"Updated {new_display_name}")
-                                            time.sleep(2)  # Show message for 2 seconds
-                                            st.rerun()
-                                else:
-                                    st.write("")  # Empty placeholder to maintain layout
-                    
-                            st.markdown("<hr style='margin: 0.5rem 0; border: 0; border-top: 1px solid rgba(0,0,0,0.1);' />", unsafe_allow_html=True)
-                    else:
-                        st.info("No manual tags found.")
+                # Show message if no tags
+                if manual_tags_df.empty:
+                    st.info("No manual tags found.")
 
     else:
         # Show client detail page
@@ -1782,11 +1968,17 @@ elif st.session_state.active_tab == "Client":
                             # Build AG Grid
                             gb = GridOptionsBuilder.from_dataframe(df_view, enableRowGroup=False, enableValue=False, enablePivot=False)
                             
-                            # Configure selection
+                            # Configure selection - disable row click selection
                             gb.configure_selection(
                                 selection_mode="multiple",
                                 use_checkbox=False,
-                                rowMultiSelectWithClick=True,
+                                rowMultiSelectWithClick=False,
+                            )
+                            
+                            # Configure grid options to prevent row click selection
+                            gb.configure_grid_options(
+                                suppressRowClickSelection=True,
+                                rowSelection='multiple'
                             )
                             
                             # Configure the Select column with checkboxes
@@ -1846,8 +2038,9 @@ elif st.session_state.active_tab == "Client":
                                         if pd.notna(row.get("display_name")) and pd.notna(row.get("color")):
                                             color_map[str(row["display_name"])] = str(row["color"])
                                 
-                                # Create color lookup string for JS
-                                color_json = str(color_map).replace("'", '"')
+                                # Create color lookup string for JS using proper JSON encoding
+                                import json
+                                color_json = json.dumps(color_map)
                                 
                                 color_renderer = JsCode(f"""
                                     class ColorBadgeRenderer {{
@@ -1904,22 +2097,29 @@ elif st.session_state.active_tab == "Client":
                             dynamic_height = header_height + (len(df_view) * row_height) + 10
                             grid_height = max(min_height, min(dynamic_height, 800))  # cap at 800px
                             
-                            # Display the grid
+                            # Initialize deletion counter for grid key management
+                            if 'client_detail_deletion_count' not in st.session_state:
+                                st.session_state.client_detail_deletion_count = 0
+                            
+                            # Display the grid with dynamic key that changes after deletions
+                            grid_key = f'client_tags_grid_{st.session_state.client_detail_deletion_count}'
                             grid_response = AgGrid(
                                 df_view,
                                 gridOptions=grid_options,
                                 height=grid_height,
                                 fit_columns_on_grid_load=False,
-                                update_mode=GridUpdateMode.MODEL_CHANGED,
+                                update_mode=GridUpdateMode.SELECTION_CHANGED,
                                 data_return_mode=DataReturnMode.AS_INPUT,
                                 allow_unsafe_jscode=True,
                                 theme="balham",
+                                key=grid_key,
                             )
                             
                             # Show remove button if rows are selected (below the grid)
                             selected_rows = grid_response.get("selected_rows", [])
                             if selected_rows is not None and len(selected_rows) > 0:
-                                if st.button("🗑️ Remove Selected", key="remove_client_tags_button", type="primary"):
+                                selected_count = len(selected_rows)
+                                if st.button(f"🗑️ Remove Selected ({selected_count})", key="remove_client_tags_button", type="primary"):
                                     removed_count = 0
                                     
                                     # Convert selected_rows to DataFrame if it's not already
@@ -1941,6 +2141,8 @@ elif st.session_state.active_tab == "Client":
                                                     removed_count += 1
                                     
                                     if removed_count > 0:
+                                        # Increment deletion counter to reset grid selection
+                                        st.session_state.client_detail_deletion_count += 1
                                         with message_container:
                                             st.success(f"Successfully removed {removed_count} tag(s).")
                                         st.rerun()
@@ -1951,7 +2153,7 @@ elif st.session_state.active_tab == "Client":
                     
                     # Add Tag Dialog (always available)
                     if st.session_state.get("show_add_tag_dialog", False):
-                        @st.dialog("Add Manual Tag")
+                        @st.dialog("Add Tag")
                         def add_tag_dialog():
                                     manual_tags_df = fetch_tag_config(tag_type='M')
                                     if not manual_tags_df.empty:
