@@ -121,13 +121,9 @@ def get_db_engine() -> Engine:
         url, 
         poolclass=NullPool, 
         future=True,
-        pool_pre_ping=True,  # Test connections before using them
-        connect_args={
-            "connect_timeout": 10,
-        },
-        execution_options={
-            "isolation_level": "AUTOCOMMIT"  # Prevents idle in transaction state
-        }
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 10},
+        isolation_level="AUTOCOMMIT"
     )
 
 
