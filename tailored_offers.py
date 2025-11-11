@@ -117,7 +117,18 @@ def _get_database_url() -> str:
 @st.cache_resource(show_spinner=False)
 def get_db_engine() -> Engine:
     url = _get_database_url()
-    return create_engine(url, poolclass=NullPool, future=True)
+    return create_engine(
+        url, 
+        poolclass=NullPool, 
+        future=True,
+        pool_pre_ping=True,  # Test connections before using them
+        connect_args={
+            "connect_timeout": 10,
+        },
+        execution_options={
+            "isolation_level": "AUTOCOMMIT"  # Prevents idle in transaction state
+        }
+    )
 
 
 def fetch_client_tags_dataframe() -> pd.DataFrame:
