@@ -114,7 +114,6 @@ def _get_database_url() -> str:
     raise RuntimeError("Database URL not configured.")
 
 
-@st.cache_resource(show_spinner=False)
 def get_db_engine() -> Engine:
     url = _get_database_url()
     return create_engine(
