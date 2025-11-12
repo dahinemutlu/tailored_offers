@@ -483,7 +483,7 @@ with open("tailored_offers_theme.css") as f:
 
 # Initialize session state
 if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "Client"
+    st.session_state.active_tab = "Home"
 
 # Honor query param for tab switching
 if "tab" in st.query_params:
