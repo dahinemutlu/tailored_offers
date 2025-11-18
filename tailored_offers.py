@@ -125,6 +125,29 @@ def get_db_engine() -> Engine:
     )
 
 
+def fetch_tag_assignment_reasons() -> pd.DataFrame:
+    """Fetch all tag assignment reasons."""
+    engine = get_db_engine()
+    
+    query = """
+        SELECT 
+            id,
+            reason
+        FROM tag_assignment_reason
+        ORDER BY id
+    """
+    
+    try:
+        df = pd.read_sql(query, engine)
+        if df.empty:
+            df = pd.DataFrame(columns=["id", "reason"])
+        return df
+    except Exception as exc:
+        logger.exception("Failed to fetch tag assignment reasons: %s", exc)
+        st.error(f"Database error: {exc}")
+        return pd.DataFrame()
+
+
 def fetch_client_tags_dataframe() -> pd.DataFrame:
     """Fetch all client tags with related tag_config information."""
     engine = get_db_engine()
@@ -136,7 +159,9 @@ def fetch_client_tags_dataframe() -> pd.DataFrame:
             ct.tag_id,
             ct.assigned_at,
             ct.assigned_by,
-            ct.reason,
+            ct.reason_id,
+            ct.reason_other,
+            tar.reason,
             tc.system_name,
             tc.display_name,
             tc.tag_type,
@@ -145,6 +170,7 @@ def fetch_client_tags_dataframe() -> pd.DataFrame:
             tc.is_active
         FROM client_tag ct
         LEFT JOIN tag_config tc ON ct.tag_id = tc.id
+        LEFT JOIN tag_assignment_reason tar ON ct.reason_id = tar.id
         ORDER BY ct.client_id
     """
     
@@ -153,7 +179,7 @@ def fetch_client_tags_dataframe() -> pd.DataFrame:
         if df.empty:
             df = pd.DataFrame(columns=[
                 "client_id", "ont_id", "tag_id", "assigned_at", "assigned_by", 
-                "reason", "system_name", "display_name", "tag_type", "color", 
+                "reason_id", "reason_other", "reason", "system_name", "display_name", "tag_type", "color", 
                 "description", "is_active"
             ])
         
@@ -361,7 +387,9 @@ def fetch_client_tags(client_id: int) -> pd.DataFrame:
             ct.tag_id,
             ct.assigned_at,
             ct.assigned_by,
-            ct.reason,
+            ct.reason_id,
+            ct.reason_other,
+            tar.reason,
             tc.system_name,
             tc.display_name,
             tc.tag_type,
@@ -369,6 +397,7 @@ def fetch_client_tags(client_id: int) -> pd.DataFrame:
             tc.description
         FROM client_tag ct
         LEFT JOIN tag_config tc ON ct.tag_id = tc.id
+        LEFT JOIN tag_assignment_reason tar ON ct.reason_id = tar.id
         WHERE ct.client_id = %(client_id)s
         ORDER BY ct.assigned_at DESC
     """
@@ -384,13 +413,13 @@ def fetch_client_tags(client_id: int) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def add_client_tag(client_id: int, tag_id: int, ont_id: str = None, assigned_by: str = "System", reason: str = "") -> bool:
+def add_client_tag(client_id: int, tag_id: int, ont_id: str = None, assigned_by: str = "System", reason_id: int = None, reason_other: str = None) -> bool:
     """Add a tag to a client."""
     engine = get_db_engine()
     
     query = """
-        INSERT INTO client_tag (client_id, ont_id, tag_id, assigned_at, assigned_by, reason)
-        VALUES (%(client_id)s, %(ont_id)s, %(tag_id)s, CURRENT_TIMESTAMP, %(assigned_by)s, %(reason)s)
+        INSERT INTO client_tag (client_id, ont_id, tag_id, assigned_at, assigned_by, reason_id, reason_other)
+        VALUES (%(client_id)s, %(ont_id)s, %(tag_id)s, CURRENT_TIMESTAMP, %(assigned_by)s, %(reason_id)s, %(reason_other)s)
         ON CONFLICT (client_id, tag_id) DO NOTHING
     """
     
@@ -399,7 +428,8 @@ def add_client_tag(client_id: int, tag_id: int, ont_id: str = None, assigned_by:
         "ont_id": ont_id,
         "tag_id": tag_id,
         "assigned_by": assigned_by,
-        "reason": reason
+        "reason_id": reason_id,
+        "reason_other": reason_other
     }
     
     try:
@@ -1070,9 +1100,18 @@ elif st.session_state.active_tab == "Client":
                             key="tag_type_filter"
                         )
             
-                    # Create grid view - remove unwanted columns
-                    columns_to_remove = ["description", "color", "is_active", "tag_id", "system_name"]
-                    df_view = df.drop(columns=[col for col in columns_to_remove if col in df.columns], errors='ignore')
+                    # Create grid view - merge reason_other into reason for display
+                    df_view = df.copy()
+                    if "reason" in df_view.columns and "reason_other" in df_view.columns:
+                        # If reason is "Other" and reason_other has value, use reason_other
+                        df_view["reason"] = df_view.apply(
+                            lambda row: row["reason_other"] if row["reason"] == "Other" and pd.notna(row["reason_other"]) and row["reason_other"] != "" else row["reason"],
+                            axis=1
+                        )
+                    
+                    # Remove unwanted columns
+                    columns_to_remove = ["description", "color", "is_active", "tag_id", "system_name", "reason_id", "reason_other"]
+                    df_view = df_view.drop(columns=[col for col in columns_to_remove if col in df_view.columns], errors='ignore')
             
                     # Add a selection column at the beginning
                     df_view.insert(0, "Select", "")
@@ -1958,6 +1997,14 @@ elif st.session_state.active_tab == "Client":
                             st.info("No tags assigned to this client.")
                         else:
                             # Grid content only shows when there are tags
+                            # Merge reason_other into reason for display
+                            if "reason" in client_tags_df.columns and "reason_other" in client_tags_df.columns:
+                                # If reason is "Other" and reason_other has value, use reason_other
+                                client_tags_df["reason"] = client_tags_df.apply(
+                                    lambda row: row["reason_other"] if row["reason"] == "Other" and pd.notna(row["reason_other"]) and row["reason_other"] != "" else row["reason"],
+                                    axis=1
+                                )
+                            
                             # Select columns to display, keep tag_id for deletion
                             columns_to_show = ['display_name', 'tag_type', 'assigned_at', 'assigned_by', 'reason']
                             df_view = client_tags_df[[col for col in columns_to_show if col in client_tags_df.columns]].copy()
@@ -2175,17 +2222,32 @@ elif st.session_state.active_tab == "Client":
                                                 key="dialog_tag_selector"
                                             )
                                             
-                                            reason_input = st.text_input(
+                                            # Fetch available reasons
+                                            reasons_df = fetch_tag_assignment_reasons()
+                                            reason_options = ["None"] + reasons_df['reason'].tolist() if not reasons_df.empty else ["None"]
+                                            selected_reason = st.selectbox(
                                                 "Reason (optional)",
-                                                key="dialog_reason_input",
-                                                placeholder="Enter reason for adding this tag..."
+                                                options=reason_options,
+                                                index=0,
+                                                key="dialog_reason_selector"
                                             )
+                                            
+                                            # Show text input if "Other" is selected
+                                            reason_other_text = None
+                                            if selected_reason == "Other":
+                                                reason_other_text = st.text_input(
+                                                    "Please specify",
+                                                    key="dialog_reason_other_input",
+                                                    placeholder="Enter custom reason..."
+                                                )
                                             
                                             # Buttons in two columns
                                             col1, col2 = st.columns(2)
                                             add_clicked = False
                                             with col1:
-                                                if st.button("Add", key="confirm_add_tag", type="primary", disabled=(selected_tag == "Select a tag..."), use_container_width=True):
+                                                # Disable Add button if Other is selected but no text entered
+                                                is_disabled = (selected_tag == "Select a tag...") or (selected_reason == "Other" and not reason_other_text)
+                                                if st.button("Add", key="confirm_add_tag", type="primary", disabled=is_disabled, use_container_width=True):
                                                     add_clicked = True
                                             with col2:
                                                 if st.button("Cancel", key="cancel_add_tag", use_container_width=True):
@@ -2195,7 +2257,8 @@ elif st.session_state.active_tab == "Client":
                                             # Handle add action outside columns
                                             if add_clicked:
                                                 tag_id = available_tags[available_tags['display_name'] == selected_tag]['id'].values[0]
-                                                if add_client_tag(client_id, tag_id, ont_id="7701234567", assigned_by="Dahi Nemutlu", reason=reason_input):
+                                                reason_id = None if selected_reason == "None" else reasons_df[reasons_df['reason'] == selected_reason]['id'].values[0]
+                                                if add_client_tag(client_id, tag_id, ont_id="7701234567", assigned_by="Dahi Nemutlu", reason_id=reason_id, reason_other=reason_other_text):
                                                     st.session_state.show_add_tag_dialog = False
                                                     st.success(f"Added tag: {selected_tag}")
                                                     time.sleep(1)

@@ -21,15 +21,17 @@ DATA_DIR = ROOT / "data"
 SCHEMA_PATH = ROOT / "schema.sql"
 CONFIG_PATH = ROOT / "db_url.toml"
 
-TAG_CONFIG_CSV    = DATA_DIR / "tag_config.csv"          # includes 'id'
-CLIENT_CSV        = DATA_DIR / "client.csv"              # optional
-CLIENT_TAG_CSV    = DATA_DIR / "client_tag.csv"          # required
-AUTO_TAG_STAT_CSV = DATA_DIR / "auto_tag_statistic.csv"  # required
+TAG_CONFIG_CSV        = DATA_DIR / "tag_config.csv"              # includes 'id'
+TAG_REASON_CSV        = DATA_DIR / "tag_assignment_reason.csv"   # required
+CLIENT_CSV            = DATA_DIR / "client.csv"                  # optional
+CLIENT_TAG_CSV        = DATA_DIR / "client_tag.csv"              # required
+AUTO_TAG_STAT_CSV     = DATA_DIR / "auto_tag_statistic.csv"      # required
 
 # Drop children -> parents (no FKs to client, but keep order tidy)
 DROP_SQL = """
 DROP TABLE IF EXISTS auto_tag_statistic;
 DROP TABLE IF EXISTS client_tag;
+DROP TABLE IF EXISTS tag_assignment_reason;
 DROP TABLE IF EXISTS tag_config;
 DROP TABLE IF EXISTS client;
 """
@@ -57,6 +59,8 @@ def main() -> None:
         raise SystemExit(f"❌ Missing schema.sql at {SCHEMA_PATH}")
     if not TAG_CONFIG_CSV.exists():
         raise SystemExit(f"❌ Missing required CSV: {TAG_CONFIG_CSV}")
+    if not TAG_REASON_CSV.exists():
+        raise SystemExit(f"❌ Missing required CSV: {TAG_REASON_CSV}")
     if not CLIENT_TAG_CSV.exists():
         raise SystemExit(f"❌ Missing required CSV: {CLIENT_TAG_CSV}")
     if not AUTO_TAG_STAT_CSV.exists():
@@ -106,16 +110,34 @@ def main() -> None:
                 );
             """)
 
-            # 5) client_tag
+            # 5) tag_assignment_reason
+            print("📥 Importing data: tag_assignment_reason.csv…")
+            copy_file(
+                cur,
+                "tag_assignment_reason",
+                "id, reason",
+                TAG_REASON_CSV
+            )
+
+            # 5b) reset identity for tag_assignment_reason.id
+            print("🔧 Resetting identity sequence for tag_assignment_reason.id…")
+            cur.execute("""
+                SELECT setval(
+                    pg_get_serial_sequence('tag_assignment_reason', 'id'),
+                    COALESCE((SELECT MAX(id) FROM tag_assignment_reason), 0)
+                );
+            """)
+
+            # 6) client_tag
             print("📥 Importing data: client_tag.csv…")
             copy_file(
                 cur,
                 "client_tag",
-                "client_id, ont_id, tag_id, assigned_at, assigned_by, reason",
+                "client_id, ont_id, tag_id, assigned_at, assigned_by, reason_id, reason_other",
                 CLIENT_TAG_CSV
             )
 
-            # 6) auto_tag_statistic
+            # 7) auto_tag_statistic
             print("📥 Importing data: auto_tag_statistic.csv…")
             copy_file(
                 cur,
